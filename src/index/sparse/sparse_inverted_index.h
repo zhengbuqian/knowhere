@@ -17,6 +17,10 @@
 #include <queue>
 #include <unordered_map>
 #include <vector>
+#include <thread>
+#include <mutex>
+#include <chrono>
+#include <atomic>
 
 #include "io/memory_io.h"
 #include "knowhere/bitsetview.h"
@@ -26,10 +30,52 @@
 #include "knowhere/utils.h"
 
 namespace knowhere::sparse {
+
+inline std::mutex global_memory_mutex;
+inline std::unordered_map<int, size_t> global_memory_usage;
+inline std::atomic<bool> keep_running(true);
+inline std::thread reporting_thread;
+inline int next_id = 0;
+inline std::once_flag flag;
+
 template <typename T>
 class InvertedIndex {
+ private:
+    int id;
+    static void reportMemoryUsage() {
+        while (keep_running) {
+            std::this_thread::sleep_for(std::chrono::seconds(20));
+            size_t total_memory = 0;
+            {
+                std::lock_guard<std::mutex> lock(global_memory_mutex);
+                for (const auto& pair : global_memory_usage) {
+                    LOG_KNOWHERE_ERROR_ << "ZBQ MEMORY ID: " << pair.first
+                                        << ", Memory: " << pair.second / (1024.0 * 1024.0) << " MB" << std::endl;
+                    total_memory += pair.second;
+                }
+            }
+            LOG_KNOWHERE_ERROR_ << "ZBQ MEMORY Total memory used by MyClass instances: "
+                                << total_memory / (1024.0 * 1024.0) << " MB" << std::endl;
+        }
+    }
+
+    static void startReporting() {
+        reporting_thread = std::thread(reportMemoryUsage);
+        reporting_thread.detach();
+    }
  public:
     explicit InvertedIndex() {
+        std::call_once(flag, []() {
+            keep_running = true;
+            reporting_thread = std::thread(&InvertedIndex::reportMemoryUsage);
+        });
+        std::lock_guard<std::mutex> lock(global_memory_mutex);
+        id = next_id++;
+        global_memory_usage[id] = size();
+    }
+    ~InvertedIndex() {
+        std::lock_guard<std::mutex> lock(global_memory_mutex);
+        global_memory_usage.erase(id);
     }
 
     void
@@ -104,6 +150,9 @@ class InvertedIndex {
             add_row_to_index(raw_data_[i], i);
         }
 
+        std::lock_guard<std::mutex> lock2(global_memory_mutex);
+        global_memory_usage[id] = size();
+
         return Status::success;
     }
 
@@ -131,6 +180,8 @@ class InvertedIndex {
         std::unique_lock<std::shared_mutex> lock(mu_);
         value_threshold_ = *pos;
         drop_during_build_ = true;
+        std::lock_guard<std::mutex> lock2(global_memory_mutex);
+        global_memory_usage[id] = size();
         return Status::success;
     }
 
@@ -154,6 +205,8 @@ class InvertedIndex {
         for (size_t i = 0; i < rows; ++i) {
             add_row_to_index(data[i], current_rows + i);
         }
+        std::lock_guard<std::mutex> lock2(global_memory_mutex);
+        global_memory_usage[id] = size();
         return Status::success;
     }
 
@@ -202,7 +255,7 @@ class InvertedIndex {
 
     [[nodiscard]] size_t
     size() const {
-        std::shared_lock<std::shared_mutex> lock(mu_);
+        // std::shared_lock<std::shared_mutex> lock(global_memory_mutex);
         size_t res = sizeof(*this);
         res += sizeof(SparseRow<T>) * n_rows_internal();
         for (auto& row : raw_data_) {
