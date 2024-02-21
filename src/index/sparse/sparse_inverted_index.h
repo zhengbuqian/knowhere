@@ -33,6 +33,7 @@ namespace knowhere::sparse {
 
 inline std::mutex global_memory_mutex;
 inline std::unordered_map<int, size_t> global_memory_usage;
+inline std::unordered_map<int, std::string> global_memory_usage_message;
 inline std::atomic<bool> keep_running(true);
 inline std::thread reporting_thread;
 inline int next_id = 0;
@@ -50,7 +51,9 @@ class InvertedIndex {
                 std::lock_guard<std::mutex> lock(global_memory_mutex);
                 for (const auto& pair : global_memory_usage) {
                     LOG_KNOWHERE_ERROR_ << "ZBQ MEMORY ID: " << pair.first
-                                        << ", Memory: " << pair.second / (1024.0 * 1024.0) << " MB" << std::endl;
+                                        << ", Memory: " << pair.second / (1024.0 * 1024.0) << " MB ("
+                                        << global_memory_usage_message[pair.first] << ")"
+                                        << std::endl;
                     total_memory += pair.second;
                 }
             }
@@ -63,6 +66,28 @@ class InvertedIndex {
         reporting_thread = std::thread(reportMemoryUsage);
         reporting_thread.detach();
     }
+    void reportMem() {
+        global_memory_usage[id] = size();
+
+        size_t res = sizeof(*this);
+        std::string message = "";
+        res += sizeof(SparseRow<T>) * n_rows_internal();
+        for (auto& row : raw_data_) {
+            res += row.memory_usage();
+        }
+        message += "RawData MB: " + std::to_string(res / (1024.0 * 1024.0)) + "; ";
+        res = 0;
+
+        res += sizeof(std::vector<IdVal<T>>) * inverted_lut_.capacity();
+        for (auto& lut : inverted_lut_) {
+            res += sizeof(IdVal<T>) * lut.capacity();
+        }
+        message += "InvertedLut MB: " + std::to_string(res / (1024.0 * 1024.0)) + "; ";
+        if (use_wand_) {
+            res += sizeof(T) * max_in_dim_.capacity();
+        }
+        global_memory_usage_message[id] = message;
+    }
  public:
     explicit InvertedIndex() {
         std::call_once(flag, []() {
@@ -71,11 +96,12 @@ class InvertedIndex {
         });
         std::lock_guard<std::mutex> lock(global_memory_mutex);
         id = next_id++;
-        global_memory_usage[id] = size();
+        reportMem();
     }
     ~InvertedIndex() {
         std::lock_guard<std::mutex> lock(global_memory_mutex);
         global_memory_usage.erase(id);
+        global_memory_usage_message.erase(id);
     }
 
     void
@@ -151,7 +177,8 @@ class InvertedIndex {
         }
 
         std::lock_guard<std::mutex> lock2(global_memory_mutex);
-        global_memory_usage[id] = size();
+
+        reportMem();
 
         return Status::success;
     }
@@ -181,7 +208,8 @@ class InvertedIndex {
         value_threshold_ = *pos;
         drop_during_build_ = true;
         std::lock_guard<std::mutex> lock2(global_memory_mutex);
-        global_memory_usage[id] = size();
+
+        reportMem();
         return Status::success;
     }
 
@@ -206,7 +234,8 @@ class InvertedIndex {
             add_row_to_index(data[i], current_rows + i);
         }
         std::lock_guard<std::mutex> lock2(global_memory_mutex);
-        global_memory_usage[id] = size();
+
+        reportMem();
         return Status::success;
     }
 
@@ -219,7 +248,8 @@ class InvertedIndex {
         if (query.size() == 0) {
             return;
         }
-
+        // sleep for 30 seconds
+        std::this_thread::sleep_for(std::chrono::seconds(30));
         std::vector<T> values(query.size());
         for (size_t i = 0; i < query.size(); ++i) {
             values[i] = std::abs(query[i].val);
