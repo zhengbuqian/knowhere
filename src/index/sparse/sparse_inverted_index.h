@@ -14,6 +14,8 @@
 
 #include <cmath>
 #include <iostream>
+#include <sstream>
+#include <iomanip>
 #include <queue>
 #include <unordered_map>
 #include <vector>
@@ -51,20 +53,25 @@ class InvertedIndex {
                 std::lock_guard<std::mutex> lock(global_memory_mutex);
                 for (const auto& pair : global_memory_usage) {
                     std::cout << "ZBQ MEMORY ID: " << pair.first
-                                        << ", Memory: " << pair.second / (1024.0 * 1024.0) << " MB ("
+                                        << ", Memory: " << to_string_with_precision(pair.second / (1024.0 * 1024.0)) << " MB ("
                                         << global_memory_usage_message[pair.first] << ")"
                                         << std::endl;
                     total_memory += pair.second;
                 }
             }
             std::cout << "ZBQ MEMORY Total memory used by MyClass instances: "
-                                << total_memory / (1024.0 * 1024.0) << " MB" << std::endl;
+                                << to_string_with_precision(total_memory / (1024.0 * 1024.0)) << " MB" << std::endl;
         }
     }
 
     static void startReporting() {
         reporting_thread = std::thread(reportMemoryUsage);
         reporting_thread.detach();
+    }
+    static std::string to_string_with_precision(const double value, const int n = 2) {
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(n) << value;
+        return out.str();
     }
     void reportMem() {
         global_memory_usage[id] = size();
@@ -75,14 +82,20 @@ class InvertedIndex {
         for (auto& row : raw_data_) {
             res += row.memory_usage();
         }
-        message += "RawData: " + std::to_string(raw_data_container / (1024.0 * 1024.0)) + "MB + " + std::to_string(res / (1024.0 * 1024.0)) + "MB; ";
+        // message += "RawData: " + std::to_string(raw_data_container / (1024.0 * 1024.0)) + " + " + std::to_string(res / (1024.0 * 1024.0)) + " = " + std::to_string((raw_data_container + res) / (1024.0 * 1024.0)) + "MB; ";
+        message += "RawData: " + to_string_with_precision(raw_data_container / (1024.0 * 1024.0)) +
+               " + " + to_string_with_precision(res / (1024.0 * 1024.0)) +
+               " = " + to_string_with_precision((raw_data_container + res) / (1024.0 * 1024.0)) + "MB; ";
         res = 0;
 
         auto lut_container = sizeof(std::vector<IdVal<T>>) * inverted_lut_.capacity();
         for (auto& lut : inverted_lut_) {
             res += sizeof(IdVal<T>) * lut.capacity();
         }
-        message += "LUT: " + std::to_string(lut_container / (1024.0 * 1024.0)) + "MB + " + std::to_string(res / (1024.0 * 1024.0)) + "MB; ";
+        // message += "LUT: " + std::to_string(lut_container / (1024.0 * 1024.0)) + " + " + std::to_string(res / (1024.0 * 1024.0)) + " = " + std::to_string((lut_container + res) / (1024.0 * 1024.0)) + "MB; ";
+        message += "LUT: " + to_string_with_precision(lut_container / (1024.0 * 1024.0)) +
+               " + " + to_string_with_precision(res / (1024.0 * 1024.0)) +
+               " = " + to_string_with_precision((lut_container + res) / (1024.0 * 1024.0)) + "MB; ";
         if (use_wand_) {
             res += sizeof(T) * max_in_dim_.capacity();
         }
