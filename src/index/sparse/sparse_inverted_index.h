@@ -50,14 +50,14 @@ class InvertedIndex {
             {
                 std::lock_guard<std::mutex> lock(global_memory_mutex);
                 for (const auto& pair : global_memory_usage) {
-                    LOG_KNOWHERE_ERROR_ << "ZBQ MEMORY ID: " << pair.first
+                    std::cout << "ZBQ MEMORY ID: " << pair.first
                                         << ", Memory: " << pair.second / (1024.0 * 1024.0) << " MB ("
                                         << global_memory_usage_message[pair.first] << ")"
                                         << std::endl;
                     total_memory += pair.second;
                 }
             }
-            LOG_KNOWHERE_ERROR_ << "ZBQ MEMORY Total memory used by MyClass instances: "
+            std::cout << "ZBQ MEMORY Total memory used by MyClass instances: "
                                 << total_memory / (1024.0 * 1024.0) << " MB" << std::endl;
         }
     }
@@ -71,18 +71,18 @@ class InvertedIndex {
 
         size_t res = sizeof(*this);
         std::string message = "";
-        res += sizeof(SparseRow<T>) * n_rows_internal();
+        auto raw_data_container = sizeof(SparseRow<T>) * n_rows_internal();
         for (auto& row : raw_data_) {
             res += row.memory_usage();
         }
-        message += "RawData MB: " + std::to_string(res / (1024.0 * 1024.0)) + "; ";
+        message += "RawData: " + std::to_string(raw_data_container / (1024.0 * 1024.0)) + "MB + " + std::to_string(res / (1024.0 * 1024.0)) + "MB; ";
         res = 0;
 
-        res += sizeof(std::vector<IdVal<T>>) * inverted_lut_.capacity();
+        auto lut_container = sizeof(std::vector<IdVal<T>>) * inverted_lut_.capacity();
         for (auto& lut : inverted_lut_) {
             res += sizeof(IdVal<T>) * lut.capacity();
         }
-        message += "InvertedLut MB: " + std::to_string(res / (1024.0 * 1024.0)) + "; ";
+        message += "LUT: " + std::to_string(lut_container / (1024.0 * 1024.0)) + "MB + " + std::to_string(res / (1024.0 * 1024.0)) + "MB; ";
         if (use_wand_) {
             res += sizeof(T) * max_in_dim_.capacity();
         }
@@ -248,8 +248,7 @@ class InvertedIndex {
         if (query.size() == 0) {
             return;
         }
-        // sleep for 30 seconds
-        std::this_thread::sleep_for(std::chrono::seconds(30));
+        // std::this_thread::sleep_for(std::chrono::seconds(30));
         std::vector<T> values(query.size());
         for (size_t i = 0; i < query.size(); ++i) {
             values[i] = std::abs(query[i].val);
