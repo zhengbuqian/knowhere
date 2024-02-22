@@ -59,7 +59,7 @@ class InvertedIndex {
                     total_memory += pair.second;
                 }
             }
-            std::cout << "ZBQ MEMORY Total memory used by MyClass instances: "
+            std::cout << "ZBQ MEMORY Total memory used by InvertedIndex instances: "
                                 << to_string_with_precision(total_memory / (1024.0 * 1024.0)) << " MB" << std::endl;
         }
     }
