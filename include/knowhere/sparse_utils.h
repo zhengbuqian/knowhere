@@ -109,6 +109,11 @@ class SparseRow {
         return count_ * element_size() + sizeof(*this);
     }
 
+    size_t
+    data_byte_size() const {
+        return count_ * element_size();
+    }
+
     void*
     data() {
         return data_;
