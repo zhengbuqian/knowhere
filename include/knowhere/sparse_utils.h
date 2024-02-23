@@ -15,9 +15,11 @@
 #pragma once
 
 #include <algorithm>
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <iostream>
 #include <type_traits>
 #include <vector>
 
@@ -62,18 +64,32 @@ class SparseRow {
  public:
     // construct an SparseRow with memory allocated to hold `count` elements.
     SparseRow(size_t count = 0)
-        : data_(count ? new uint8_t[count * element_size()] : nullptr), count_(count), own_data_(true) {
+        : data_(std::make_unique<std::string>(count * element_size(), ' ')), data_view_(*data_), count_(count) {
+        print_self("constructor");
     }
 
-    SparseRow(size_t count, uint8_t* data, bool own_data) : data_(data), count_(count), own_data_(own_data) {
+    void print_self(std::string name) {
+        // std::cout << name << " this " << this << " data string addr: " << data_.get();
+        // if (data_) {
+        //     std::cout << " data underlying: " << (const void*)data_->data() << " data size: " << data_->size() << std::endl;
+        // }
+        // else {
+        //     std::cout << " data is empty" << std::endl;
+        // }
     }
+
+    // SparseRow(size_t count, uint8_t* data, bool own_data) : data_(data), count_(count), own_data_(own_data) {
+    // }
 
     // copy constructor and copy assignment operator perform deep copy
     SparseRow(const SparseRow<T>& other) : SparseRow(other.count_) {
-        std::copy(other.data_, other.data_ + count_ * element_size(), data_);
+        std::copy(other.data_->data(), other.data_->data() + data_byte_size(), data_->data());
+        data_view_ = *data_;
+        print_self("copy constructor");
     }
 
     SparseRow(SparseRow<T>&& other) noexcept : SparseRow() {
+        print_self("move constructor");
         swap(*this, other);
     }
 
@@ -83,20 +99,20 @@ class SparseRow {
             SparseRow<T> tmp(other);
             swap(*this, tmp);
         }
+        print_self("copy assignment");
         return *this;
     }
 
     SparseRow&
     operator=(SparseRow<T>&& other) noexcept {
+        print_self("move assignment");
         swap(*this, other);
         return *this;
     }
 
     ~SparseRow() {
-        if (own_data_ && data_ != nullptr) {
-            delete[] data_;
-            data_ = nullptr;
-        }
+        // print address of this, address of data_->data() and data_ size.
+        print_self("destructor");
     }
 
     size_t
@@ -106,17 +122,24 @@ class SparseRow {
 
     size_t
     memory_usage() const {
-        return count_ * element_size() + sizeof(*this);
+        return data_byte_size() + sizeof(*this);
+    }
+
+    size_t
+    data_byte_size() const {
+        return data_view_.size();
     }
 
     void*
     data() {
-        return data_;
+        // when trying to write to data, make sure we own the data.
+        assert(data_);
+        return data_->data();
     }
 
     const void*
     data() const {
-        return data_;
+        return data_view_.data();
     }
 
     // dim of a sparse vector is the max index + 1, or 0 for an empty vector.
@@ -125,19 +148,19 @@ class SparseRow {
         if (count_ == 0) {
             return 0;
         }
-        auto* elem = reinterpret_cast<const ElementProxy*>(data_) + count_ - 1;
+        auto* elem = reinterpret_cast<const ElementProxy*>(data_view_.data()) + count_ - 1;
         return elem->index + 1;
     }
 
     IdVal<T>
     operator[](size_t i) const {
-        auto* elem = reinterpret_cast<const ElementProxy*>(data_) + i;
+        auto* elem = reinterpret_cast<const ElementProxy*>(data_view_.data()) + i;
         return {elem->index, elem->value};
     }
 
     void
     set_at(size_t i, table_t index, T value) {
-        auto* elem = reinterpret_cast<ElementProxy*>(data_) + i;
+        auto* elem = reinterpret_cast<ElementProxy*>(data_->data()) + i;
         elem->index = index;
         elem->value = value;
     }
@@ -147,8 +170,8 @@ class SparseRow {
         float product_sum = 0.0f;
         size_t i = 0, j = 0;
         while (i < count_ && j < other.count_) {
-            auto* left = reinterpret_cast<const ElementProxy*>(data_) + i;
-            auto* right = reinterpret_cast<const ElementProxy*>(other.data_) + j;
+            auto* left = reinterpret_cast<const ElementProxy*>(data_view_.data()) + i;
+            auto* right = reinterpret_cast<const ElementProxy*>(other.data_view_.data()) + j;
 
             if (left->index < right->index) {
                 ++i;
@@ -165,10 +188,14 @@ class SparseRow {
 
     friend void
     swap(SparseRow<T>& left, SparseRow<T>& right) {
+        left.print_self("\tbefore swap left");
+        right.print_self("\tbefore swap right");
         using std::swap;
-        swap(left.count_, right.count_);
         swap(left.data_, right.data_);
-        swap(left.own_data_, right.own_data_);
+        swap(left.data_view_, right.data_view_);
+        swap(left.count_, right.count_);
+        left.print_self("\tafter swap left");
+        right.print_self("\tafter swap right");
     }
 
     static inline size_t
@@ -185,11 +212,15 @@ class SparseRow {
         ElementProxy() = delete;
         ElementProxy(const ElementProxy&) = delete;
     };
-    // data_ must be sorted by column id. use raw pointer for easy mmap and zero
-    // copy.
-    uint8_t* data_;
+    // if this owns the data, data_ is responsible for freeing the memory. If
+    // this doesn't own the data, data_ is empty.
+    std::unique_ptr<std::string> data_;
+    // read should always be through data_view_: data_ may be empty if this
+    // doesn't own the data.
+    // index/value pairs must be sorted by column id.
+    std::string_view data_view_;
+    // number of index/value pairs
     size_t count_;
-    bool own_data_;
 };
 
 // When pushing new elements into a MaxMinHeap, only `capacity` elements with the

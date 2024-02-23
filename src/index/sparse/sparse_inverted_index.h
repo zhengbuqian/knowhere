@@ -71,7 +71,7 @@ class InvertedIndex {
             if (row.size() == 0) {
                 continue;
             }
-            writer.write(row.data(), row.size() * SparseRow<T>::element_size());
+            writer.write(row.data(), row.data_byte_size());
         }
         return Status::success;
     }
