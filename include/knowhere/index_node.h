@@ -16,6 +16,7 @@
 #include <queue>
 #include <utility>
 #include <vector>
+#include <iostream>
 
 #include "knowhere/binaryset.h"
 #include "knowhere/bitsetview.h"
@@ -208,6 +209,7 @@ class IndexIterator : public IndexNode::iterator {
         auto ret = q.top();
         q.pop();
         UpdateNext();
+        std::cout << "IndexIterator next: " << ret.id << ", " << ret.val << std::endl;
         return std::make_pair(ret.id, ret.val * sign_);
     }
 

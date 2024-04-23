@@ -9,6 +9,8 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 // or implied. See the License for the specific language governing permissions and limitations under the License.
 
+#include <iostream>
+
 #include "common/metric.h"
 #include "faiss/IndexBinaryFlat.h"
 #include "faiss/IndexBinaryIVF.h"
@@ -285,6 +287,10 @@ class IvfIndexNode : public IndexNode {
         void
         next_batch(std::function<void(const std::vector<DistId>&)> batch_handler) override {
             index_->getIteratorNextBatch(workspace_.get(), res_.size());
+            std::cout << "\tivf iterator batch: ";
+            for (size_t i = 0; i < workspace_->dists.size(); i++) {
+                std::cout << workspace_->dists[i].val << " ";
+            }
             batch_handler(workspace_->dists);
             workspace_->dists.clear();
         }
@@ -647,6 +653,8 @@ IvfIndexNode<DataType, IndexType>::Search(const DataSet& dataset, const Config& 
     auto k = ivf_cfg.k.value();
     auto nprobe = ivf_cfg.nprobe.value();
 
+    std::cout << "Search nprobe: " << nprobe << " this " << this << std::endl;
+
     int64_t* ids(new (std::nothrow) int64_t[rows * k]);
     float* distances(new (std::nothrow) float[rows * k]);
     int32_t* i_distances = reinterpret_cast<int32_t*>(distances);
@@ -895,6 +903,8 @@ IvfIndexNode<DataType, IndexType>::AnnIterator(const DataSet& dataset, const Con
         auto larger_is_closer = IsMetricType(ivf_cfg.metric_type.value(), knowhere::metric::IP) || is_cosine;
 
         size_t nprobe = ivf_cfg.nprobe.value();
+
+        std::cout << "Ann Iterator nprobe: " << nprobe << " this " << this << std::endl;
 
         try {
             std::vector<folly::Future<folly::Unit>> futs;
