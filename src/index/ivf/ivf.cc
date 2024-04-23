@@ -292,7 +292,7 @@ class IvfIndexNode : public IndexNode {
                 for (size_t i = 0; i < workspace_->dists.size(); i++) {
                     std::cout << workspace_->dists[i].val << " ";
                 }
-                std::cout << "\n";
+                std::cout << "\n" << std::flush;
             }
             batch_handler(workspace_->dists);
             workspace_->dists.clear();
