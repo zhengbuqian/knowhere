@@ -437,6 +437,7 @@ IvfIndexNode<DataType, IndexType>::TrainInternal(const DataSet& dataset, const C
     if constexpr (std::is_same<faiss::IndexIVFFlat, IndexType>::value) {
         const IvfFlatConfig& ivf_flat_cfg = static_cast<const IvfFlatConfig&>(cfg);
         auto nlist = MatchNlist(rows, ivf_flat_cfg.nlist.value());
+        std::cout << "Train nlist " << nlist << std::endl;
 
         const bool use_elkan = ivf_flat_cfg.use_elkan.value_or(true);
 
@@ -902,6 +903,7 @@ IvfIndexNode<DataType, IndexType>::AnnIterator(const DataSet& dataset, const Con
         auto vec = std::vector<std::shared_ptr<IndexNode::iterator>>(rows, nullptr);
 
         const IvfConfig& ivf_cfg = static_cast<const IvfConfig&>(cfg);
+        std::cout << "Ann Iterator metric type: " << ivf_cfg.metric_type.value() << std::endl;
         bool is_cosine = IsMetricType(ivf_cfg.metric_type.value(), knowhere::metric::COSINE);
         auto larger_is_closer = IsMetricType(ivf_cfg.metric_type.value(), knowhere::metric::IP) || is_cosine;
 
