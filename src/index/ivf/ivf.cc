@@ -288,7 +288,7 @@ class IvfIndexNode : public IndexNode {
         next_batch(std::function<void(const std::vector<DistId>&)> batch_handler) override {
             index_->getIteratorNextBatch(workspace_.get(), res_.size());
             if (!workspace_->dists.empty()) {
-                std::cout << "\tivf iterator batch " << workspace_->dists.sise() << ": ";
+                std::cout << "\tivf iterator batch " << workspace_->dists.size() << ": ";
                 for (size_t i = 0; i < workspace_->dists.size(); i++) {
                     std::cout << workspace_->dists[i].val << " ";
                 }
