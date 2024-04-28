@@ -637,6 +637,9 @@ IvfIndexNode<DataType, IndexType>::Search(const DataSet& dataset, const Config& 
         return expected<DataSetPtr>::Err(Status::index_not_trained, "index not trained");
     }
 
+    LOG_KNOWHERE_ERROR_ << "ZBQ KNOWHERE searching on IVF index " << index_.get() << " , bitset size: " << bitset.size()
+                        << " filtered count: " << bitset.count() << " index rows " << index_->ntotal;
+
     auto dim = dataset.GetDim();
     auto rows = dataset.GetRows();
     auto data = dataset.GetTensor();
@@ -729,6 +732,15 @@ IvfIndexNode<DataType, IndexType>::Search(const DataSet& dataset, const Config& 
                     ivf_search_params.sel = id_selector;
 
                     index_->search(1, cur_query, k, distances + offset, ids + offset, &ivf_search_params);
+                    auto found = k;
+                    for (int64_t x = 0; x < k; x++) {
+                        if (ids[offset + x] == -1) {
+                            --found;
+                            break;
+                        }
+                    }
+                    LOG_KNOWHERE_ERROR_ << "ZBQ KNOWHERE searching on IVF index " << index_.get() << " found " << found
+                                        << " results";
                 }
             }));
         }
