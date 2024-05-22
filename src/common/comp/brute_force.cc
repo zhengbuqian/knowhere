@@ -11,6 +11,7 @@
 
 #include "knowhere/comp/brute_force.h"
 
+#include <iostream>
 #include <vector>
 
 #include "common/metric.h"
@@ -459,6 +460,10 @@ BruteForce::SearchSparseWithBuf(const DataSetPtr base_dataset, const DataSetPtr 
 
     BruteForceConfig cfg;
     std::string msg;
+    std::cout << "ZBQ SearchSparseWithBuf\n";
+    for (auto& [key, value] : config.items()) {
+        std::cout << "ZBQ Knwhwererere " << key << " fffffffffff " << value.dump();
+    }
     auto status = Config::Load(cfg, config, knowhere::SEARCH, &msg);
     if (status != Status::success) {
         LOG_KNOWHERE_ERROR_ << "Failed to load config, msg is: " << msg;

@@ -156,6 +156,8 @@ class InvertedIndex {
     void
     Search(const SparseRow<T>& query, size_t k, float drop_ratio_search, float* distances, label_t* labels,
            size_t refine_factor, const BitsetView& bitset) const {
+        std::cout << "ZBQ Search sparse inverted index with drop ratio search: " << drop_ratio_search
+                  << ", drop during build: " << drop_during_build_ << ", value threshold: " << value_threshold_ << "\n";
         // initially set result distances to NaN and labels to -1
         std::fill(distances, distances + k, std::numeric_limits<float>::quiet_NaN());
         std::fill(labels, labels + k, -1);
@@ -456,9 +458,11 @@ class InvertedIndex {
     void
     collect_result(HeapType& heap, float* distances, label_t* labels) const {
         int cnt = heap.size();
+        std::cout << "ZBQ collect result, heap size: " << cnt << "\n";
         for (auto i = cnt - 1; i >= 0; --i) {
             labels[i] = heap.top().id;
             distances[i] = heap.top().val;
+            std::cout << "ZBQ collect result, id: " << labels[i] << ", distance: " << distances[i] << "\n";
             heap.pop();
         }
     }
