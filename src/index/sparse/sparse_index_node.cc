@@ -9,6 +9,10 @@
 // is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
 // or implied. See the License for the specific language governing permissions and limitations under the License.
 
+#include <sys/mman.h>
+
+#include <iostream>
+
 #include "index/hnsw/hnsw_config.h"
 #include "index/sparse/sparse_inverted_index.h"
 #include "index/sparse/sparse_inverted_index_config.h"
@@ -86,6 +90,8 @@ class SparseInvertedIndexNode : public IndexNode {
         auto k = cfg.k.value();
         auto refine_factor = cfg.refine_factor.value_or(10);
         auto drop_ratio_search = cfg.drop_ratio_search.value_or(0.0f);
+
+        std::cout << "ZBQ Sparse IndexNode Search drop ratio search: " << drop_ratio_search << std::endl;
 
         auto p_id = std::make_unique<sparse::label_t[]>(nq * k);
         auto p_dist = std::make_unique<float[]>(nq * k);

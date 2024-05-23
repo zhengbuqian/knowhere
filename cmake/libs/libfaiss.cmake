@@ -59,6 +59,7 @@ if(__PPC64)
   target_link_libraries(knowhere_utils PUBLIC glog::glog)
 endif()
 
+find_package(LAPACK REQUIRED)
 if(LINUX)
   set(BLA_VENDOR OpenBLAS)
 endif()
@@ -69,7 +70,6 @@ endif()
 
 find_package(BLAS REQUIRED)
 
-find_package(LAPACK REQUIRED)
 
 if(__X86_64)
   list(REMOVE_ITEM FAISS_SRCS ${FAISS_AVX2_SRCS})
