@@ -19,6 +19,8 @@
 #include <random>
 #include <set>
 #include <vector>
+#include <cassert>
+#include <sys/stat.h>
 
 #include "catch2/generators/catch_generators.hpp"
 #include "knowhere/binaryset.h"
@@ -124,6 +126,33 @@ GetKNNRecall(const knowhere::DataSet& ground_truth, const knowhere::DataSet& res
     auto res_k = result.GetDim();
     auto gt_ids = ground_truth.GetIds();
     auto res_ids = result.GetIds();
+
+    uint32_t matched_num = 0;
+    for (auto i = 0; i < nq; ++i) {
+        std::vector<int64_t> ids_0(gt_ids + i * gt_k, gt_ids + i * gt_k + res_k);
+        std::vector<int64_t> ids_1(res_ids + i * res_k, res_ids + i * res_k + res_k);
+
+        std::sort(ids_0.begin(), ids_0.end());
+        std::sort(ids_1.begin(), ids_1.end());
+
+        std::vector<int64_t> v(std::max(ids_0.size(), ids_1.size()));
+        std::vector<int64_t>::iterator it;
+        it = std::set_intersection(ids_0.begin(), ids_0.end(), ids_1.begin(), ids_1.end(), v.begin());
+        v.resize(it - v.begin());
+        matched_num += v.size();
+    }
+    return ((float)matched_num) / ((float)nq * res_k);
+}
+
+inline float
+GetKNNRecall(const knowhere::DataSet& ground_truth, int32_t* result) {
+    // REQUIRE(ground_truth.GetDim() >= result.GetDim());
+
+    auto nq = ground_truth.GetRows();
+    auto gt_k = ground_truth.GetDim();
+    auto res_k = gt_k;
+    auto gt_ids = ground_truth.GetIds();
+    auto res_ids = result;
 
     uint32_t matched_num = 0;
     for (auto i = 0; i < nq; ++i) {
@@ -367,4 +396,89 @@ GenSparseDataSet(int32_t rows, int32_t cols, float sparsity, int seed = 42) {
     ds->SetIsOwner(true);
     ds->SetIsSparse(true);
     return ds;
+}
+
+inline knowhere::DataSetPtr
+ReadSparseMatrix(const std::string& fname) {
+    std::ifstream file(fname, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open file");
+    }
+
+    int64_t sizes[3];
+    file.read(reinterpret_cast<char*>(sizes), 3 * sizeof(int64_t));
+    int64_t nrow = sizes[0];
+    int64_t ncol = sizes[1];
+    int64_t nnz = sizes[2];
+
+    std::vector<int64_t> indptr(nrow + 1);
+    file.read(reinterpret_cast<char*>(indptr.data()), (nrow + 1) * sizeof(int64_t));
+    assert(nnz == indptr[nrow]);
+
+    std::vector<int32_t> indices(nnz);
+    file.read(reinterpret_cast<char*>(indices.data()), nnz * sizeof(int32_t));
+    for (int32_t idx : indices) {
+        assert(idx >= 0 && idx < ncol);
+    }
+
+    std::vector<float> data(nnz);
+    file.read(reinterpret_cast<char*>(data.data()), nnz * sizeof(float));
+
+    file.close();
+
+    auto tensor = std::make_unique<knowhere::sparse::SparseRow<float>[]>(nrow);
+
+    for (int64_t i = 0; i < nrow; ++i) {
+        int64_t row_start = indptr[i];
+        int64_t row_end = indptr[i + 1];
+        int64_t row_size = row_end - row_start;
+
+        if (row_size == 0) {
+            continue;
+        }
+
+        knowhere::sparse::SparseRow<float> row(row_size);
+        for (int64_t j = row_start; j < row_end; ++j) {
+            row.set_at(j - row_start, indices[j], data[j]);
+        }
+        tensor[i] = std::move(row);
+    }
+
+    auto ds = knowhere::GenDataSet(nrow, ncol, tensor.release());
+    ds->SetIsOwner(true);
+    ds->SetIsSparse(true);
+    return ds;
+}
+
+inline knowhere::DataSetPtr
+ReadSparseGT(const std::string& fname) {
+    std::ifstream file(fname, std::ios::binary);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open file");
+    }
+
+    uint32_t n, d;
+    file.read(reinterpret_cast<char*>(&n), sizeof(uint32_t));
+    file.read(reinterpret_cast<char*>(&d), sizeof(uint32_t));
+
+    struct stat file_stat;
+    if (stat(fname.c_str(), &file_stat) != 0) {
+        throw std::runtime_error("Failed to get file size");
+    }
+    assert(file_stat.st_size == 8 + n * d * (4 + 4));
+
+    auto ids = std::make_unique<int64_t[]>(n * d);
+    auto distances = std::make_unique<float[]>(n * d);
+
+    std::vector<int32_t> I(n * d);
+    file.read(reinterpret_cast<char*>(I.data()), n * d * sizeof(int32_t));
+    for (size_t i = 0; i < n * d; ++i) {
+        ids[i] = static_cast<int64_t>(I[i]);
+    }
+
+    file.read(reinterpret_cast<char*>(distances.get()), n * d * sizeof(float));
+
+    file.close();
+
+    return knowhere::GenResultDataSet(n, d, ids.release(), distances.release());
 }

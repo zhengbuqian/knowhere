@@ -50,7 +50,7 @@ class ThreadPool {
                     LOG_KNOWHERE_ERROR_ << "Failed to set priority of knowhere thread. Error is: "
                                         << std::strerror(errno);
                 } else {
-                    LOG_KNOWHERE_INFO_ << "Successfully set priority of knowhere thread.";
+                    // LOG_KNOWHERE_INFO_ << "Successfully set priority of knowhere thread.";
                 }
                 func();
             });

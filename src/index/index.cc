@@ -41,11 +41,11 @@ Index<T>::Build(const DataSet& dataset, const Json& json) {
     RETURN_IF_ERROR(LoadConfig(cfg.get(), json, knowhere::TRAIN, "Build"));
 
 #if defined(NOT_COMPILE_FOR_SWIG) && !defined(KNOWHERE_WITH_LIGHT)
-    TimeRecorder rc("Build index", 2);
+    // TimeRecorder rc("Build index", 2);
     auto res = this->node->Build(dataset, *cfg);
-    auto time = rc.ElapseFromBegin("done");
-    time *= 0.000001;  // convert to s
-    knowhere_build_latency.Observe(time);
+    // auto time = rc.ElapseFromBegin("done");
+    // time *= 0.000001;  // convert to s
+    // knowhere_build_latency.Observe(time);
 #else
     auto res = this->node->Build(dataset, *cfg);
 #endif

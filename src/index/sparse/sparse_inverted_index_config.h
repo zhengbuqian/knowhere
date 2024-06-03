@@ -22,6 +22,7 @@ class SparseInvertedIndexConfig : public BaseConfig {
     CFG_FLOAT drop_ratio_build;
     CFG_FLOAT drop_ratio_search;
     CFG_INT refine_factor;
+    CFG_INT max_q_dim;
     KNOHWERE_DECLARE_CONFIG(SparseInvertedIndexConfig) {
         KNOWHERE_CONFIG_DECLARE_FIELD(drop_ratio_build)
             .description("drop ratio for build")
@@ -40,6 +41,11 @@ class SparseInvertedIndexConfig : public BaseConfig {
             .set_default(10)
             .for_search()
             .for_range_search();
+        KNOWHERE_CONFIG_DECLARE_FIELD(max_q_dim)
+            .description("max_q_dim")
+            .set_default(5)
+            .set_range(0, 100)
+            .for_train();
     }
 };  // class SparseInvertedIndexConfig
 
