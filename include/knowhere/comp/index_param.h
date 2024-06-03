@@ -137,10 +137,12 @@ constexpr const char* EFCONSTRUCTION = "efConstruction";
 constexpr const char* HNSW_M = "M";
 constexpr const char* EF = "ef";
 constexpr const char* OVERVIEW_LEVELS = "overview_levels";
+constexpr const char* IS_SPARSE = "is_sparse";
 
 // Sparse Params
 constexpr const char* DROP_RATIO_BUILD = "drop_ratio_build";
 constexpr const char* DROP_RATIO_SEARCH = "drop_ratio_search";
+constexpr const char* MAX_Q_DIM = "max_q_dim";
 }  // namespace indexparam
 
 using MetricType = std::string;

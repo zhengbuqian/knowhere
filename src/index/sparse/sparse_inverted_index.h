@@ -38,6 +38,12 @@ class InvertedIndex {
         use_wand_ = use_wand;
     }
 
+    void
+    SetMaxQDim(size_t max_q_dim) {
+        std::unique_lock<std::shared_mutex> lock(mu_);
+        max_q_dim_ = max_q_dim;
+    }
+
     Status
     Save(MemoryIOWriter& writer) {
         /**
@@ -365,7 +371,9 @@ class InvertedIndex {
         auto q_dim = q_vec.size();
         std::vector<std::shared_ptr<Cursor<std::vector<SparseIdVal<T>>>>> cursors(q_dim);
         auto valid_q_dim = 0;
-        for (size_t i = 0; i < q_dim; ++i) {
+        // TODO: this is wrong!! q_vec is not sorted, we are not iterating based on
+        // decreasing value order.
+        for (int32_t i = q_dim - 1; i >= 0; --i) {
             auto [idx, val] = q_vec[i];
             if (std::abs(val) < q_threshold || idx >= n_cols_internal()) {
                 continue;
@@ -377,6 +385,7 @@ class InvertedIndex {
             auto& lut = lut_it->second;
             cursors[valid_q_dim++] = std::make_shared<Cursor<std::vector<SparseIdVal<T>>>>(
                 lut, n_rows_internal(), max_in_dim_.find(idx)->second * val, val, bitset);
+            if (valid_q_dim == max_q_dim_) break;
         }
         if (valid_q_dim == 0) {
             return;
@@ -499,6 +508,8 @@ class InvertedIndex {
     T value_threshold_ = 0.0f;
     std::unordered_map<table_t, T> max_in_dim_;
     size_t max_dim_ = 0;
+
+    size_t max_q_dim_ = 5;
 
 };  // class InvertedIndex
 

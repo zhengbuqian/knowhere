@@ -52,8 +52,10 @@ class SparseInvertedIndexNode : public IndexNode {
             return Status::invalid_metric_type;
         }
         auto drop_ratio_build = cfg.drop_ratio_build.value_or(0.0f);
+        auto max_q_dim = cfg.max_q_dim.value_or(5);
         auto index = new sparse::InvertedIndex<T>();
         index->SetUseWand(use_wand);
+        index->SetMaxQDim(max_q_dim);
         index->Train(static_cast<const sparse::SparseRow<T>*>(dataset.GetTensor()), dataset.GetRows(),
                      drop_ratio_build);
         if (index_ != nullptr) {

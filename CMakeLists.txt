@@ -42,8 +42,8 @@ knowhere_option(WITH_LIGHT "Build with light weight version" OFF)
 
 # cardinal is an enterprise vector search engine and can only be enabled for
 # cloud environment
-knowhere_option(WITH_CARDINAL "Build with cardinal" OFF)
-knowhere_option(CARDINAL_VERSION_FORCE_CHECKOUT "Force checkout cardinal version" OFF)
+knowhere_option(WITH_CARDINAL "Build with cardinal" ON)
+knowhere_option(CARDINAL_VERSION_FORCE_CHECKOUT "Force checkout cardinal version" ON)
 # this is needed for clang on ubuntu:20.04, otherwise the linked fails with
 # 'undefined reference' error. fmt v9 was used by the time the error was
 # encountered. clang on ubuntu:22.04 seems to be unaffected. gcc seems to be
@@ -137,10 +137,10 @@ endif()
 
 set(KNOWHERE_LINKER_LIBS "")
 
-if(WITH_CARDINAL)
+# if(WITH_CARDINAL)
   add_definitions(-DKNOWHERE_WITH_CARDINAL)
   include(cmake/libs/libcardinal.cmake)
-endif()
+# endif()
 
 if(WITH_DISKANN)
   add_definitions(-DKNOWHERE_WITH_DISKANN)
