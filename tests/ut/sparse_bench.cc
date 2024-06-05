@@ -43,8 +43,8 @@ TEST_CASE("SPARSE knowheresparse") {
         json[knowhere::meta::METRIC_TYPE] = metric;
         json[knowhere::meta::TOPK] = topk;
 
-        json[knowhere::indexparam::HNSW_M] = 32;
-        json[knowhere::indexparam::EFCONSTRUCTION] = 120;
+        json[knowhere::indexparam::HNSW_M] = 30;
+        json[knowhere::indexparam::EFCONSTRUCTION] = 360;
         json[knowhere::indexparam::EF] = 120;
         json[knowhere::indexparam::IS_SPARSE] = true;
         return json;
