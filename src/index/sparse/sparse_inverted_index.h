@@ -83,6 +83,7 @@ class InvertedIndex : public BaseInvertedIndex<T> {
     GetDocValueComputer(const SparseInvertedIndexConfig& cfg) const override {
         // if metric_type is set in config, it must match with how the index was built.
         auto metric_type = cfg.metric_type;
+        LOG_KNOWHERE_ERROR_ << "GetDocValueComputer metric_type: " << metric_type.value();
         if constexpr (!bm25) {
             if (metric_type.has_value() && !IsMetricType(metric_type.value(), metric::IP)) {
                 auto msg =
