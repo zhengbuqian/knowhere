@@ -99,15 +99,37 @@ class SparseInvertedIndexNode : public IndexNode {
         auto p_dist = std::make_unique<float[]>(nq * k);
 
         std::vector<folly::Future<folly::Unit>> futs;
+        auto push_counts = std::make_unique<int[]>(nq);
+        auto score_counts = std::make_unique<int[]>(nq);
         futs.reserve(nq);
         for (int64_t idx = 0; idx < nq; ++idx) {
-            futs.emplace_back(search_pool_->push([&, idx = idx, p_id = p_id.get(), p_dist = p_dist.get()]() {
-                index_->Search(queries[idx], k, drop_ratio_search, p_dist + idx * k, p_id + idx * k, refine_factor,
+            futs.emplace_back(search_pool_->push([&, idx = idx, p_id = p_id.get(), p_dist = p_dist.get(), push_counts = push_counts.get()]() {
+                auto count = index_->Search(queries[idx], k, drop_ratio_search, p_dist + idx * k, p_id + idx * k, refine_factor,
                                bitset, computer);
+                push_counts[idx] = count.first;
+                score_counts[idx] = count.second;
             }));
         }
         WaitAllSuccess(futs);
-        return GenResultDataSet(nq, k, p_id.release(), p_dist.release());
+        // Calculate and print average push count
+        int64_t total_push_count = 0;
+        int64_t total_score_count = 0;
+        for (int64_t i = 0; i < nq; ++i) {
+            total_push_count += push_counts[i];
+            total_score_count += score_counts[i];
+        }
+        double avg_push_count = static_cast<double>(total_push_count) / nq;
+        double avg_score_count = static_cast<double>(total_score_count) / nq;
+        LOG_KNOWHERE_INFO_ << "\t\tAverage push count: " << avg_push_count;
+        LOG_KNOWHERE_INFO_ << "\t\tAverage score count: " << avg_score_count;
+        auto ret_ds = std::make_shared<DataSet>();
+        ret_ds->SetRows(nq);
+        ret_ds->SetDim(k);
+        ret_ds->SetIds((const int64_t*)p_id.release());
+        ret_ds->SetDistance(p_dist.release());
+        // ret_ds->SetLims((const size_t*)push_counts.release());
+        ret_ds->SetIsOwner(true);
+        return ret_ds;
     }
 
     // TODO: for now inverted index and wand use the same impl for AnnIterator.

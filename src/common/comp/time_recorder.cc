@@ -35,32 +35,32 @@ TimeRecorder::PrintTimeRecord(const std::string& msg, double span) {
         return;
     }
 
-    std::string str_log;
-    if (!header_.empty()) {
-        str_log += header_ + ": ";
-    }
-    str_log += msg;
-    str_log += " (";
-    str_log += TimeRecorder::GetTimeSpanStr(span);
-    str_log += ")";
+    // std::string str_log;
+    // if (!header_.empty()) {
+    //     str_log += header_ + ": ";
+    // }
+    // str_log += msg;
+    // str_log += " (";
+    // str_log += TimeRecorder::GetTimeSpanStr(span);
+    // str_log += ")";
 
-    switch (log_level_) {
-        case 2:
-            LOG_KNOWHERE_INFO_ << str_log;
-            break;
-        case 3:
-            LOG_KNOWHERE_WARNING_ << str_log;
-            break;
-        case 4:
-            LOG_KNOWHERE_ERROR_ << str_log;
-            break;
-        case 5:
-            LOG_KNOWHERE_FATAL_ << str_log;
-            break;
-        default:
-            LOG_KNOWHERE_INFO_ << str_log;
-            break;
-    }
+    // switch (log_level_) {
+    //     case 2:
+    //         LOG_KNOWHERE_INFO_ << str_log;
+    //         break;
+    //     case 3:
+    //         LOG_KNOWHERE_WARNING_ << str_log;
+    //         break;
+    //     case 4:
+    //         LOG_KNOWHERE_ERROR_ << str_log;
+    //         break;
+    //     case 5:
+    //         LOG_KNOWHERE_FATAL_ << str_log;
+    //         break;
+    //     default:
+    //         LOG_KNOWHERE_INFO_ << str_log;
+    //         break;
+    // }
 }
 
 double

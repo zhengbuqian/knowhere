@@ -44,7 +44,7 @@ class BaseInvertedIndex {
     virtual Status
     Add(const SparseRow<T>* data, size_t rows, int64_t dim) = 0;
 
-    virtual void
+    virtual std::pair<int, int>
     Search(const SparseRow<T>& query, size_t k, float drop_ratio_search, float* distances, label_t* labels,
            size_t refine_factor, const BitsetView& bitset, const DocValueComputer<T>& computer) const = 0;
 
@@ -72,6 +72,7 @@ template <typename T, bool use_wand = false, bool bm25 = false>
 class InvertedIndex : public BaseInvertedIndex<T> {
  public:
     explicit InvertedIndex() {
+        bm25_params_ = std::make_unique<BM25Params>(1.2, 0.75, 100, 1.1);
     }
 
     void
@@ -195,6 +196,7 @@ class InvertedIndex : public BaseInvertedIndex<T> {
     // include all rows that'll be added to the index.
     Status
     Train(const SparseRow<T>* data, size_t rows, float drop_ratio_build) override {
+        // LOG_KNOWHERE_INFO_ << "drop_ratio_build: " << drop_ratio_build << std::endl;
         if (drop_ratio_build == 0.0f) {
             return Status::success;
         }
@@ -224,6 +226,7 @@ class InvertedIndex : public BaseInvertedIndex<T> {
         std::unique_lock<std::shared_mutex> lock(mu_);
         value_threshold_ = *pos;
         drop_during_build_ = true;
+        // LOG_KNOWHERE_INFO_ << "value threadhold: " << value_threshold_ << std::endl;
         return Status::success;
     }
 
@@ -246,17 +249,32 @@ class InvertedIndex : public BaseInvertedIndex<T> {
         for (size_t i = 0; i < rows; ++i) {
             add_row_to_index(data[i], current_rows + i);
         }
+
+        if constexpr (use_wand) {
+            T sum = 0;
+            size_t count = 0;
+            for (const auto& [dim, max_score] : max_score_in_dim_) {
+                sum += max_score;
+                count++;
+            }
+            if (count > 0) {
+                T average = sum / count;
+                LOG_KNOWHERE_INFO_ << "Average of max scores in dimensions: " << average;
+            } else {
+                LOG_KNOWHERE_INFO_ << "No max scores in dimensions to average";
+            }
+        }
         return Status::success;
     }
 
-    void
+    std::pair<int, int>
     Search(const SparseRow<T>& query, size_t k, float drop_ratio_search, float* distances, label_t* labels,
            size_t refine_factor, const BitsetView& bitset, const DocValueComputer<T>& computer) const override {
         // initially set result distances to NaN and labels to -1
         std::fill(distances, distances + k, std::numeric_limits<float>::quiet_NaN());
         std::fill(labels, labels + k, -1);
         if (query.size() == 0) {
-            return;
+            return {0, 0};
         }
 
         std::vector<T> values(query.size());
@@ -274,10 +292,12 @@ class InvertedIndex : public BaseInvertedIndex<T> {
             refine_factor = 1;
         }
         MaxMinHeap<T> heap(k * refine_factor);
+        int push_count = 0;
+        int score_count = 0;
         if constexpr (!use_wand) {
             search_brute_force(query, q_threshold, heap, bitset, computer);
         } else {
-            search_wand(query, q_threshold, heap, bitset, computer);
+            search_wand(query, q_threshold, heap, bitset, computer, push_count, score_count);
         }
 
         if (refine_factor == 1) {
@@ -285,6 +305,7 @@ class InvertedIndex : public BaseInvertedIndex<T> {
         } else {
             refine_and_collect(query, heap, k, distances, labels, computer);
         }
+        return {push_count, score_count};
     }
 
     std::vector<float>
@@ -462,7 +483,7 @@ class InvertedIndex : public BaseInvertedIndex<T> {
     // any value in q_vec that is smaller than q_threshold will be ignored.
     void
     search_wand(const SparseRow<T>& q_vec, T q_threshold, MaxMinHeap<T>& heap, const BitsetView& bitset,
-                const DocValueComputer<T>& computer) const {
+                const DocValueComputer<T>& computer, int& push_count, int& score_count) const {
         auto q_dim = q_vec.size();
         std::vector<std::shared_ptr<Cursor<std::vector<SparseIdVal<T>>>>> cursors(q_dim);
         auto valid_q_dim = 0;
@@ -516,8 +537,10 @@ class InvertedIndex : public BaseInvertedIndex<T> {
                     T cur_vec_sum = bm25 ? bm25_params_->row_sums.at(cursor->cur_vec_id()) : 0;
                     score += cursor->q_value() * computer(cursor->cur_vec_val(), cur_vec_sum);
                     cursor->next();
+                    score_count++;
                 }
                 heap.push(pivot_id, score);
+                push_count++;
                 sort_cursors();
             } else {
                 size_t next_list = pivot;
