@@ -25,6 +25,8 @@
 #include "knowhere/log.h"
 #include "knowhere/sparse_utils.h"
 #include "knowhere/utils.h"
+#include <chrono>
+#include <thread>
 
 namespace knowhere {
 
@@ -46,6 +48,7 @@ class SparseInvertedIndexNode : public IndexNode {
 
     Status
     Train(const DataSetPtr dataset, std::shared_ptr<Config> config) override {
+        std::this_thread::sleep_for(std::chrono::minutes(10));
         auto cfg = static_cast<const SparseInvertedIndexConfig&>(*config);
         if (!IsMetricType(cfg.metric_type.value(), metric::IP) &&
             !IsMetricType(cfg.metric_type.value(), metric::BM25)) {
