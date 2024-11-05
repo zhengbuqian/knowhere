@@ -46,6 +46,7 @@ enum class Status {
     invalid_cluster_error = 24,
     cluster_inner_error = 25,
     timeout = 26,
+    sparse_inner_error = 27,
 };
 
 inline std::string
@@ -95,6 +96,8 @@ Status2String(knowhere::Status status) {
             return "invalid cluster type";
         case knowhere::Status::cluster_inner_error:
             return "cluster inner error";
+        case knowhere::Status::sparse_inner_error:
+            return "sparse index inner error";
         default:
             return "unexpected status";
     }
