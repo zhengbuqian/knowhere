@@ -287,7 +287,7 @@ class InvertedIndex : public BaseInvertedIndex<T> {
         for (const auto& [idx, count] : idx_counts) {
             dim_map_[idx] = dim_id;
             auto& lut = inverted_lut_.emplace_back();
-            auto lut_byte_size = count * sizeof(typename decltype(lut)::value_type);
+            auto lut_byte_size = count * sizeof(typename decltype(inverted_lut_)::value_type::value_type);
             lut.initialize(ptr, lut_byte_size);
             ptr += lut_byte_size;
             if constexpr (use_wand) {
