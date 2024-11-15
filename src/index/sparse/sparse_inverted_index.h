@@ -33,6 +33,18 @@
 #include "knowhere/utils.h"
 
 namespace knowhere::sparse {
+
+struct SearchStats {
+    SearchStats() : push_count(0), score_count(0), swap_count(0), pivot_count(0), break_early_count(0), init_upper_bound_count(0), sort_cursor_count(0) {}
+    int64_t push_count = 0;
+    int64_t score_count = 0;
+    int64_t swap_count = 0;
+    int64_t pivot_count = 0;
+    int64_t break_early_count = 0;
+    int64_t init_upper_bound_count = 0;
+    int64_t sort_cursor_count = 0;
+};
+
 template <typename T>
 class BaseInvertedIndex {
  public:
@@ -52,9 +64,9 @@ class BaseInvertedIndex {
     virtual Status
     Add(const SparseRow<T>* data, size_t rows, int64_t dim) = 0;
 
-    virtual void
+    virtual SearchStats
     Search(const SparseRow<T>& query, size_t k, float drop_ratio_search, float* distances, label_t* labels,
-           size_t refine_factor, const BitsetView& bitset, const DocValueComputer<T>& computer) const = 0;
+           size_t refine_factor, const BitsetView& bitset, const DocValueComputer<T>& computer, bool new_wand) const = 0;
 
     virtual std::vector<float>
     GetAllDistances(const SparseRow<T>& query, float drop_ratio_search, const BitsetView& bitset,
@@ -86,6 +98,7 @@ template <typename T, bool use_wand = false, bool bm25 = false, bool mmapped = f
 class InvertedIndex : public BaseInvertedIndex<T> {
  public:
     explicit InvertedIndex() {
+        bm25_params_ = std::make_unique<BM25Params>(1.2, 0.75, 100, 1.1);
     }
 
     ~InvertedIndex() override {
@@ -387,18 +400,33 @@ class InvertedIndex : public BaseInvertedIndex<T> {
             for (size_t i = 0; i < rows; ++i) {
                 add_row_to_index(data[i], current_rows + i);
             }
+            if constexpr (use_wand) {
+                T sum = 0;
+                size_t count = 0;
+                for (const auto& max_score : max_score_in_dim_) {
+                    sum += max_score;
+                    count++;
+                }
+                if (count > 0) {
+                    T average = sum / count;
+                    LOG_KNOWHERE_INFO_ << "Average of max scores in dimensions: " << average;
+                } else {
+                    LOG_KNOWHERE_INFO_ << "No max scores in dimensions to average";
+                }
+            }
             return Status::success;
         }
     }
 
-    void
+    SearchStats
     Search(const SparseRow<T>& query, size_t k, float drop_ratio_search, float* distances, label_t* labels,
-           size_t refine_factor, const BitsetView& bitset, const DocValueComputer<T>& computer) const override {
+           size_t refine_factor, const BitsetView& bitset, const DocValueComputer<T>& computer, bool new_wand) const override {
         // initially set result distances to NaN and labels to -1
         std::fill(distances, distances + k, std::numeric_limits<float>::quiet_NaN());
         std::fill(labels, labels + k, -1);
+        SearchStats stats;
         if (query.size() == 0) {
-            return;
+            return stats;
         }
 
         std::vector<T> values(query.size());
@@ -413,10 +441,15 @@ class InvertedIndex : public BaseInvertedIndex<T> {
             refine_factor = 1;
         }
         MaxMinHeap<T> heap(k * refine_factor);
+
         if constexpr (!use_wand) {
             search_brute_force(query, q_threshold, heap, bitset, computer);
         } else {
-            search_wand(query, q_threshold, heap, bitset, computer);
+            if (new_wand) {
+                search_wand_1(query, q_threshold, heap, bitset, computer, stats);
+            } else {
+                search_wand_2(query, q_threshold, heap, bitset, computer, stats);
+            }
         }
 
         if (refine_factor == 1) {
@@ -424,6 +457,7 @@ class InvertedIndex : public BaseInvertedIndex<T> {
         } else {
             refine_and_collect(query, heap, k, distances, labels, computer);
         }
+        return stats;
     }
 
     // Returned distances are inaccurate based on the drop_ratio.
@@ -631,8 +665,108 @@ class InvertedIndex : public BaseInvertedIndex<T> {
 
     // any value in q_vec that is smaller than q_threshold will be ignored.
     void
-    search_wand(const SparseRow<T>& q_vec, T q_threshold, MaxMinHeap<T>& heap, const BitsetView& bitset,
-                const DocValueComputer<T>& computer) const {
+    search_wand_1(const SparseRow<T>& q_vec, T q_threshold, MaxMinHeap<T>& heap, const BitsetView& bitset,
+                const DocValueComputer<T>& computer, SearchStats& stats) const {
+        auto q_dim = q_vec.size();
+        std::vector<std::shared_ptr<Cursor<const typename decltype(inverted_lut_)::value_type&>>> cursors(q_dim);
+        auto valid_q_dim = 0;
+        for (size_t i = 0; i < q_dim; ++i) {
+            auto [idx, val] = q_vec[i];
+            auto dim_id = dim_map_.find(idx);
+            if (dim_id == dim_map_.end() || std::abs(val) < q_threshold) {
+                continue;
+            }
+            auto& lut = inverted_lut_[dim_id->second];
+            cursors[valid_q_dim++] = std::make_shared<Cursor<decltype(lut)>>(
+                lut, n_rows_internal(), max_score_in_dim_[dim_id->second] * val, val, bitset);
+        }
+        if (valid_q_dim == 0) {
+            return;
+        }
+        cursors.resize(valid_q_dim);
+        auto sort_cursors = [&cursors, &stats] {
+            // stats.sort_cursor_count++;
+            std::sort(cursors.begin(), cursors.end(),
+                      [](auto& x, auto& y) { return x->cur_vec_id_ < y->cur_vec_id_; });
+        };
+        sort_cursors();
+        while (true) {
+            float threshold = heap.full() ? heap.top().val : 0;
+            float upper_bound = 0;
+            size_t pivot;
+            bool found_pivot = false;
+            for (pivot = 0; pivot < valid_q_dim; ++pivot) {
+                if (cursors[pivot]->loc_ >= cursors[pivot]->lut_size_) {
+                    break;
+                }
+                upper_bound += cursors[pivot]->max_score_;
+                // stats.init_upper_bound_count++;
+                if (upper_bound > threshold) {
+                    found_pivot = true;
+                    break;
+                }
+            }
+            if (!found_pivot) {
+                break;
+            }
+            // stats.pivot_count++;
+            table_t pivot_id = cursors[pivot]->cur_vec_id_;
+            if (pivot_id == cursors[0]->cur_vec_id_) {
+                while (pivot + 1 < valid_q_dim && cursors[pivot + 1]->cur_vec_id_ == cursors[pivot]->cur_vec_id_) {
+                    ++pivot;
+                    upper_bound += cursors[pivot]->max_score_;
+                    // stats.init_upper_bound_count++;
+                }
+                // now all cursors in [0, pivot] point to the same document pivot_id.
+                bool break_early = false;
+                size_t i = 0;
+                for (; i <= pivot; ++i) {
+                    auto& cursor = cursors[i];
+                    T cur_vec_sum = bm25 ? bm25_params_->row_sums.at(cursor->cur_vec_id_) : 0;
+                    auto contrib = cursor->q_value_ * computer(cursor->cur_vec_val(), cur_vec_sum);
+                    // stats.score_count++;
+                    // replace the max score in upper_bound with the actual score.
+                    upper_bound += contrib;
+                    upper_bound -= cursor->max_score_;
+                    if (upper_bound < threshold) {
+                        // this doc can no longer reach the threshold, no need to compute the score for the rest of the
+                        // cursors.
+                        break_early = true;
+                        // stats.break_early_count++;
+                        break;
+                    }
+                    cursor->next();
+                }
+
+                if (!break_early) {
+                    heap.push(pivot_id, upper_bound);
+                    // stats.push_count++;
+                } else {
+                    for (; i <= pivot; ++i) {
+                        cursors[i]->next();
+                    }
+                }
+                sort_cursors();
+            } else {
+                // stats.swap_count++;
+                size_t next_list = pivot;
+                for (; cursors[next_list]->cur_vec_id_ == pivot_id; --next_list) {
+                }
+                cursors[next_list]->seek(pivot_id);
+                for (size_t i = next_list + 1; i < valid_q_dim; ++i) {
+                    if (cursors[i]->cur_vec_id_ >= cursors[i - 1]->cur_vec_id_) {
+                        break;
+                    }
+                    std::swap(cursors[i], cursors[i - 1]);
+                }
+            }
+        }
+    }
+
+    // any value in q_vec that is smaller than q_threshold will be ignored.
+    void
+    search_wand_2(const SparseRow<T>& q_vec, T q_threshold, MaxMinHeap<T>& heap, const BitsetView& bitset,
+                const DocValueComputer<T>& computer, SearchStats& stats) const {
         auto q_dim = q_vec.size();
         std::vector<std::shared_ptr<Cursor<const typename decltype(inverted_lut_)::value_type&>>> cursors(q_dim);
         size_t valid_q_dim = 0;
@@ -650,8 +784,10 @@ class InvertedIndex : public BaseInvertedIndex<T> {
             return;
         }
         cursors.resize(valid_q_dim);
-        auto sort_cursors = [&cursors] {
-            std::sort(cursors.begin(), cursors.end(), [](auto& x, auto& y) { return x->cur_vec_id_ < y->cur_vec_id_; });
+        auto sort_cursors = [&cursors, &stats] {
+            // stats.sort_cursor_count++;
+            std::sort(cursors.begin(), cursors.end(),
+                      [](auto& x, auto& y) { return x->cur_vec_id_ < y->cur_vec_id_; });
         };
         sort_cursors();
         while (true) {
@@ -664,6 +800,7 @@ class InvertedIndex : public BaseInvertedIndex<T> {
                     break;
                 }
                 upper_bound += cursors[pivot]->max_score_;
+                // stats.init_upper_bound_count++;
                 if (upper_bound > threshold) {
                     found_pivot = true;
                     break;
@@ -672,6 +809,7 @@ class InvertedIndex : public BaseInvertedIndex<T> {
             if (!found_pivot) {
                 break;
             }
+            // stats.pivot_count++;
             table_t pivot_id = cursors[pivot]->cur_vec_id_;
             if (pivot_id == cursors[0]->cur_vec_id_) {
                 float score = 0;
@@ -681,11 +819,14 @@ class InvertedIndex : public BaseInvertedIndex<T> {
                     }
                     T cur_vec_sum = bm25 ? bm25_params_->row_sums.at(cursor->cur_vec_id_) : 0;
                     score += cursor->q_value_ * computer(cursor->cur_vec_val(), cur_vec_sum);
+                    // stats.score_count++;
                     cursor->next();
                 }
                 heap.push(pivot_id, score);
+                // stats.push_count++;
                 sort_cursors();
             } else {
+                // stats.swap_count++;
                 size_t next_list = pivot;
                 for (; cursors[next_list]->cur_vec_id_ == pivot_id; --next_list) {
                 }

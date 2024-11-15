@@ -25,6 +25,7 @@
 #include "knowhere/log.h"
 #include "knowhere/sparse_utils.h"
 #include "knowhere/utils.h"
+#include <iostream>
 
 namespace knowhere {
 
@@ -111,15 +112,112 @@ class SparseInvertedIndexNode : public IndexNode {
         auto p_dist = std::make_unique<float[]>(nq * k);
 
         std::vector<folly::Future<folly::Unit>> futs;
-        futs.reserve(nq);
-        for (int64_t idx = 0; idx < nq; ++idx) {
-            futs.emplace_back(search_pool_->push([&, idx = idx, p_id = p_id.get(), p_dist = p_dist.get()]() {
-                index_->Search(queries[idx], k, drop_ratio_search, p_dist + idx * k, p_id + idx * k, refine_factor,
-                               bitset, computer);
-            }));
+        auto all_stats = std::make_unique<sparse::SearchStats[]>(nq);
+
+        double search_count = 40;
+
+        std::string user_input;
+        LOG_KNOWHERE_WARNING_ << "Do you want to continue searching with new WAND? (less than 3 chars for yes): ";
+        std::cin >> user_input;
+        LOG_KNOWHERE_WARNING_ << "user_input: \"" << user_input << "\" decision: " << (user_input.size() < 3 ? "yes" : "no") << std::endl;
+        if (user_input.size() < 3)
+        {
+            LOG_KNOWHERE_WARNING_ << "Start new WAND search: ";
+            futs.reserve(nq * search_count);
+            auto now = std::chrono::steady_clock::now();
+            for (int64_t count = 0; count < nq * search_count; ++count) {
+                int64_t idx = count % nq;
+                futs.emplace_back(search_pool_->push([&, idx = idx, p_id = p_id.get(), p_dist = p_dist.get(), all_stats = all_stats.get()]() {
+                    auto stats = index_->Search(queries[idx], k, drop_ratio_search, p_dist + idx * k, p_id + idx * k, refine_factor,
+                                bitset, computer, true);
+                    all_stats[idx] = stats;
+                }));
+            }
+            WaitAllSuccess(futs);
+            auto end = std::chrono::steady_clock::now();
+            sparse::SearchStats total_stats;
+            for (int64_t i = 0; i < nq; ++i) {
+                total_stats.push_count += all_stats[i].push_count;
+                total_stats.score_count += all_stats[i].score_count;
+                total_stats.swap_count += all_stats[i].swap_count;
+                total_stats.pivot_count += all_stats[i].pivot_count;
+                total_stats.break_early_count += all_stats[i].break_early_count;
+                total_stats.init_upper_bound_count += all_stats[i].init_upper_bound_count;
+                total_stats.sort_cursor_count += all_stats[i].sort_cursor_count;
+            }
+            LOG_KNOWHERE_WARNING_ << "New WAND search stats:";
+            if (total_stats.push_count > 0) {
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage push count: " << static_cast<double>(total_stats.push_count) / nq;
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage score count: " << static_cast<double>(total_stats.score_count) / nq;
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage swap count: " << static_cast<double>(total_stats.swap_count) / nq;
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage pivot count: " << static_cast<double>(total_stats.pivot_count) / nq;
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage break early count: " << static_cast<double>(total_stats.break_early_count) / nq;
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage init upper bound count: " << static_cast<double>(total_stats.init_upper_bound_count) / nq;
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage sort cursor count: " << static_cast<double>(total_stats.sort_cursor_count) / nq;
+            }
+            LOG_KNOWHERE_WARNING_ << "\t\tTime taken: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count() << "ms";
         }
-        WaitAllSuccess(futs);
-        return GenResultDataSet(nq, k, p_id.release(), p_dist.release());
+
+        LOG_KNOWHERE_WARNING_ << "Do you want to continue searching with old WAND? (less than 3 chars for yes): ";
+        std::cin >> user_input;
+        LOG_KNOWHERE_WARNING_ << "user_input: \"" << user_input << "\" decision: " << (user_input.size() < 3 ? "yes" : "no") << std::endl;
+        if (user_input.size() < 3)
+        {
+            LOG_KNOWHERE_WARNING_ << "Start old WAND search: ";
+            futs.clear();
+            all_stats = std::make_unique<sparse::SearchStats[]>(nq);
+            futs.reserve(nq);
+            auto now = std::chrono::steady_clock::now();
+            for (int64_t count = 0; count < nq * search_count; ++count) {
+                int64_t idx = count % nq;
+                futs.emplace_back(search_pool_->push([&, idx = idx, p_id = p_id.get(), p_dist = p_dist.get(), all_stats = all_stats.get()]() {
+                    auto stats = index_->Search(queries[idx], k, drop_ratio_search, p_dist + idx * k, p_id + idx * k, refine_factor,
+                                bitset, computer, false);
+                    all_stats[idx] = stats;
+                }));
+            }
+            WaitAllSuccess(futs);
+            auto end = std::chrono::steady_clock::now();
+            sparse::SearchStats total_stats;
+            total_stats.push_count = 0;
+            total_stats.score_count = 0;
+            total_stats.swap_count = 0;
+            total_stats.pivot_count = 0;
+            total_stats.break_early_count = 0;
+            total_stats.init_upper_bound_count = 0;
+            total_stats.sort_cursor_count = 0;
+
+            for (int64_t i = 0; i < nq; ++i) {
+                total_stats.push_count += all_stats[i].push_count;
+                total_stats.score_count += all_stats[i].score_count;
+                total_stats.swap_count += all_stats[i].swap_count;
+                total_stats.pivot_count += all_stats[i].pivot_count;
+                total_stats.break_early_count += all_stats[i].break_early_count;
+                total_stats.init_upper_bound_count += all_stats[i].init_upper_bound_count;
+                total_stats.sort_cursor_count += all_stats[i].sort_cursor_count;
+            }
+            LOG_KNOWHERE_WARNING_ << "Old WAND search stats:";
+            if (total_stats.push_count > 0) {
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage push count: " << static_cast<double>(total_stats.push_count) / nq;
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage score count: " << static_cast<double>(total_stats.score_count) / nq;
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage swap count: " << static_cast<double>(total_stats.swap_count) / nq;
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage pivot count: " << static_cast<double>(total_stats.pivot_count) / nq;
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage break early count: " << static_cast<double>(total_stats.break_early_count) / nq;
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage init upper bound count: " << static_cast<double>(total_stats.init_upper_bound_count) / nq;
+                LOG_KNOWHERE_WARNING_ << "\t\tAverage sort cursor count: " << static_cast<double>(total_stats.sort_cursor_count) / nq;
+            }
+            LOG_KNOWHERE_WARNING_ << "\t\tTime taken: " << std::chrono::duration_cast<std::chrono::milliseconds>(end - now).count() << "ms";
+        }
+
+
+        auto ret_ds = std::make_shared<DataSet>();
+        ret_ds->SetRows(nq);
+        ret_ds->SetDim(k);
+        ret_ds->SetIds((const int64_t*)p_id.release());
+        ret_ds->SetDistance(p_dist.release());
+        // ret_ds->SetLims((const size_t*)push_counts.release());
+        ret_ds->SetIsOwner(true);
+        return ret_ds;
     }
 
  private:

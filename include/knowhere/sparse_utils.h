@@ -55,9 +55,37 @@ template <typename T>
 auto
 GetDocValueBM25Computer(float k1, float b, float avgdl) {
     return [k1, b, avgdl](const T& tf, const float doc_len) -> float {
+        // multiply: 3
+        // plus: 4
+        // divide: 2
         return tf * (k1 + 1) / (tf + k1 * (1 - b + b * (doc_len / avgdl)));
     };
 }
+
+// template <typename T>
+// auto
+// GetDocValueBM25Computer(float k1, float b, float avgdl) {
+//     return [k1, b, avgdl](const T& tf, const float doc_len) -> float {
+//         // multiply: 2
+//         // plus: 2
+//         // divide: 2
+//         return tf * k2 / (tf + k1b2 + k1b * (doc_len / avgdl)));
+//     };
+// }
+
+// template <typename T>
+// auto
+// GetDocValueBM25Computer(float k1, float b, float avgdl, std::map<table_t, float> z_map) {
+//     return [k1, b, avgdl, z_map](const T& tf, const float doc_len) -> float {
+//         float z = z_map.find(doc_id)->second;
+//         // multiply: 1
+//         // plus: 1
+//         // divide: 1
+//         return tf * idf / (tf + z);
+//     };
+// }
+
+
 
 template <typename T>
 class SparseRow {

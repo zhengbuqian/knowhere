@@ -52,7 +52,7 @@ IndexFactory::Create(const std::string& name, const int32_t& version, const Obje
         LOG_KNOWHERE_ERROR_ << "failed to find index " << key << " in factory";
         return expected<Index<IndexNode>>::Err(Status::invalid_index_error, "index not supported");
     }
-    LOG_KNOWHERE_INFO_ << "use key " << key << " to create knowhere index " << name << " with version " << version;
+    // LOG_KNOWHERE_INFO_ << "use key " << key << " to create knowhere index " << name << " with version " << version;
     auto fun_map_v = (FunMapValue<Index<IndexNode>>*)(func_mapping_[key].get());
 
 #ifdef KNOWHERE_WITH_RAFT
