@@ -31,7 +31,7 @@ LoadConfig(BaseConfig* cfg, const Json& json, knowhere::PARAM_TYPE param_type, c
            std::string* const msg = nullptr) {
     Json json_(json);
     auto res = Config::FormatAndCheck(*cfg, json_, msg);
-    LOG_KNOWHERE_DEBUG_ << method << " config dump: " << json_.dump();
+    // LOG_KNOWHERE_DEBUG_ << method << " config dump: " << json_.dump();
     RETURN_IF_ERROR(res);
     return Config::Load(*cfg, json_, param_type, msg);
 }
