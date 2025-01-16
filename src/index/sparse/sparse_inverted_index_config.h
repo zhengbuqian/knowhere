@@ -89,6 +89,19 @@ class SparseInvertedIndexConfig : public BaseConfig {
             .for_deserialize()
             .for_deserialize_from_file();
     }
+
+    Status
+    CheckAndAdjust(PARAM_TYPE param_type, std::string* err_msg) override {
+        if (param_type == PARAM_TYPE::TRAIN || param_type == PARAM_TYPE::DESERIALIZE || param_type == PARAM_TYPE::DESERIALIZE_FROM_FILE) {
+            constexpr std::array<std::string_view, 3> legal_algo_list{"DAAT_WAND", "DAAT_MAXSCORE", "TAAT_NAIVE"};
+            std::string algo = inverted_index_algo.value();
+            if (std::find(legal_algo_list.begin(), legal_algo_list.end(), algo) == legal_algo_list.end()) {
+                std::string msg = "inverted index algo " + algo + " not found or not supported, supported: [DAAT_WAND DAAT_MAXSCORE TAAT_NAIVE]";
+                return HandleError(err_msg, msg, Status::invalid_metric_type);
+            }
+        }
+        return Status::success;
+    }
 };  // class SparseInvertedIndexConfig
 
 }  // namespace knowhere
