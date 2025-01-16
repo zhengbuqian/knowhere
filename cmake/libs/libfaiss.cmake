@@ -62,6 +62,7 @@ endif()
 
 
 if(LINUX)
+  find_package(LAPACK REQUIRED)
   set(BLA_VENDOR OpenBLAS)
 endif()
 
@@ -73,7 +74,6 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android" AND CMAKE_SYSTEM_PROCESSOR STREQUAL "aar
   find_package(OpenBLAS REQUIRED)
   set(BLAS_LIBRARIES OpenBLAS::OpenBLAS)
 else()
-  find_package(LAPACK REQUIRED)
   find_package(BLAS REQUIRED)
 endif()
 
